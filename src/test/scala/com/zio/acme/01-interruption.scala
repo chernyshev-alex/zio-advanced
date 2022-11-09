@@ -1,6 +1,6 @@
 package com.zio.acme
 
-import zio._
+import zio.{URIO, _}
 import zio.test.{assertTrue, _}
 import zio.test.TestAspect._
 
@@ -267,16 +267,24 @@ object UninterruptibleMask extends ZIOSpecDefault {
 object Graduation01 extends ZIOSpecDefault {
   def spec =
     suite("Graduation") {
-
       /**
        * CHOICE 1
        *
        * Using `uninterruptibleMask`, implement a correct version of
        * `ensuring`.
        */
-      test("ensuring") {
-        def withFinalizer[R, E, A](zio: ZIO[R, E, A])(finalizer: UIO[Any]): ZIO[R, E, A] =
-          zio <* finalizer
+      test("ensuring") {  // bullet train
+        def withFinalizer[R, E, A](zio: ZIO[R, E, A])(finalizer: UIO[Any]): ZIO[R, E, A] = {
+          //  original version
+          //  zio <* finalizer
+          // Fixed ensuring version
+          ZIO.uninterruptibleMask { restore =>
+            restore(zio).foldCauseZIO(
+              cause1 => finalizer.foldCauseZIO(cause2 => ZIO.refailCause(cause1 ++ cause2), _ => ZIO.refailCause(cause1)),
+              a => finalizer.map(_ => a)
+            )
+          }
+        }
 
         for {
           latch   <- Promise.make[Nothing, Unit]
@@ -287,7 +295,7 @@ object Graduation01 extends ZIOSpecDefault {
           _       <- fiber.interrupt
           v       <- ref.get
         } yield assertTrue(v)
-      } @@ ignore +
+      }  +
         /**
          * CHOICE 2
          *
@@ -295,10 +303,22 @@ object Graduation01 extends ZIOSpecDefault {
          * `acquireReleaseWith`.
          */
         test("acquireRelease") {
-          def acquireReleaseWith[R, E, A, B](
-                                              acquire: ZIO[R, E, A]
-                                            )(release: A => UIO[Any])(use: A => ZIO[R, E, B]): ZIO[R, E, B] =
-            acquire.flatMap(a => use(a) <* release(a))
+          def acquireReleaseWith[R, E, A, B](acquire: ZIO[R, E, A])
+                                            (release: A => UIO[B])
+                                            (use: A => ZIO[R, E, B]): ZIO[R, E, B] = {
+
+            val f_release: (A, Exit[E, B]) => URIO[R, B] = (a: A, _: Exit[E, B]) => release(a)
+            ZIO.uninterruptibleMask[R, E, B](restore => {
+              acquire.flatMap(a => ZIO.suspendSucceed(restore(use(a)))
+                  .exit
+                  .flatMap(e => ZIO.suspendSucceed[R, E, B]((f_release(a, e)))
+                        .foldCauseZIO(cause => ZIO.refailCause(e.foldExit(_ ++ cause, _ => cause)),
+                           _ => ZIO.done(e)
+                        )
+                  )
+              )
+            })
+          }
 
           for {
             latch   <- Promise.make[Nothing, Unit]

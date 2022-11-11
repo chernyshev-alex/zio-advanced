@@ -64,7 +64,7 @@ object QueueBasics extends ZIOSpecDefault {
             counter <- Ref.make(0)
             queue   <- Queue.bounded[Int](100)
             _       <- ZIO.foreach(1 to 100)(v => queue.offer(v)).forkDaemon
-            _       <- queue.take.flatMap(v => counter.update(_ + v)).debug.repeatWhileZIO(_ => ! queue.isEmpty)
+            _       <- queue.take.flatMap(v => counter.update(_ + v)).repeatWhileZIO(_ => ! queue.isEmpty)
             value   <- counter.get
           } yield assertTrue(value == 5050)
         } +
@@ -79,11 +79,11 @@ object QueueBasics extends ZIOSpecDefault {
           for {
             counter <- Ref.make(0)
             queue   <- Queue.bounded[Int](100)
-            _       <- ZIO.foreach(1 to 100)(v => queue.offer(v)).forkDaemon
+            _       <- ZIO.foreachPar(1 to 100)(v => queue.offer(v)).forkDaemon
             _       <- queue.take.flatMap(v => counter.update(_ + v)).repeatN(99)
             value   <- counter.get
           } yield assertTrue(value == 5050)
-        } @@ ignore +
+        }  +
         /**
          * EXERCISE
          *
@@ -95,10 +95,19 @@ object QueueBasics extends ZIOSpecDefault {
             counter <- Ref.make(0)
             queue   <- Queue.bounded[Int](100)
             _       <- ZIO.foreachPar(1 to 100)(v => queue.offer(v)).forkDaemon
-            _       <- queue.take.flatMap(v => counter.update(_ + v)).repeatN(99)
+            fiber   <-  ZIO.uninterruptible {
+                          for {
+                            child  <- queue.take.flatMap(a => ZIO.interruptible(counter.update(_ + a)))
+                                        .repeatWhileZIO(_ => ! queue.isEmpty)
+                                        .fork
+
+                            _   <- child.join
+                          } yield child
+                        }
+
             value   <- counter.get
           } yield assertTrue(value == 5050)
-        } @@ ignore +
+        }  +
         /**
          * EXERCISE
          *
@@ -113,9 +122,11 @@ object QueueBasics extends ZIOSpecDefault {
             _      <- (latch.succeed(()) *> queue.offer(1).forever).ensuring(done.set(true)).fork
             _      <- latch.await
             _      <- queue.takeN(100)
+            _      <- queue.shutdown    // added to pass the test
             isDone <- done.get.repeatWhile(_ == false).timeout(10.millis).some
+
           } yield assertTrue(isDone)
-        } @@ ignore
+        }
     }
 }
 

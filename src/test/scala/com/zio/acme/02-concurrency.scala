@@ -19,6 +19,7 @@
  */
 package com.zio.acme
 import zio._
+import zio.stm.ZSTM.ifSTM
 import zio.stm._
 import zio.test._
 import zio.test.TestAspect._
@@ -140,15 +141,14 @@ object StmBasics extends ZIOSpecDefault {
   def spec =
     suite("StmBasics") {
       test("latch") {
-
         /**
          * EXERCISE
          *
          * Implement a simple concurrent latch.
          */
         final case class Latch(ref: TRef[Boolean]) {
-          def await: UIO[Any]   = ZIO.unit
-          def trigger: UIO[Any] = ZIO.unit
+          def await: UIO[Any]  = ref.get.retryUntil(_ == true).commit
+          def trigger: UIO[Any] = ref.set(true).commit
         }
 
         def makeLatch: UIO[Latch] = TRef.make(false).map(Latch(_)).commit
@@ -162,9 +162,8 @@ object StmBasics extends ZIOSpecDefault {
           _      <- Live.live(Clock.sleep(10.millis))
           second <- waiter.poll
         } yield assertTrue(first.isEmpty && second.isDefined)
-      } @@ ignore +
+      }  +
         test("countdown latch") {
-
           /**
            * EXERCISE
            *
@@ -187,7 +186,7 @@ object StmBasics extends ZIOSpecDefault {
             _      <- Live.live(Clock.sleep(10.millis))
             second <- waiter.poll
           } yield assertTrue(first.isEmpty && second.isDefined)
-        } @@ ignore +
+        } @@ignore +
         test("permits") {
 
           /**
@@ -217,7 +216,7 @@ object StmBasics extends ZIOSpecDefault {
             count   <- counter.get
             permits <- permits.ref.get.commit
           } yield assertTrue(count == 0 && permits == 100)
-        } @@ ignore
+        } @@ignore
     }
 }
 

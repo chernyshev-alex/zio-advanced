@@ -170,8 +170,8 @@ object StmBasics extends ZIOSpecDefault {
            * Implement a simple concurrent latch.
            */
           final case class CountdownLatch(ref: TRef[Int]) {
-            def await: UIO[Any]     = ZIO.unit
-            def countdown: UIO[Any] = ZIO.unit
+            def await: UIO[Any]     = ref.get.retryUntil(_ == 0).commit
+            def countdown: UIO[Any] = ref.update(_ - 1).commit
           }
 
           def makeLatch(n: Int): UIO[CountdownLatch] = TRef.make(n).map(ref => CountdownLatch(ref)).commit
@@ -186,18 +186,16 @@ object StmBasics extends ZIOSpecDefault {
             _      <- Live.live(Clock.sleep(10.millis))
             second <- waiter.poll
           } yield assertTrue(first.isEmpty && second.isDefined)
-        } @@ignore +
+        }  +
         test("permits") {
-
           /**
            * EXERCISE
            *
            * Implement `acquire` and `release` in a fashion the test passes.
            */
           final case class Permits(ref: TRef[Int]) {
-            def acquire(howMany: Int): UIO[Unit] = ???
-
-            def release(howMany: Int): UIO[Unit] = ???
+            def acquire(howMany: Int): UIO[Unit] = (ref.get.retryUntil(_ > howMany) *> ref.update(_ - howMany)).commit
+            def release(howMany: Int): UIO[Unit] = ref.update(_ + howMany).commit
           }
 
           def makePermits(max: Int): UIO[Permits] = TRef.make(max).map(Permits(_)).commit
@@ -216,7 +214,7 @@ object StmBasics extends ZIOSpecDefault {
             count   <- counter.get
             permits <- permits.ref.get.commit
           } yield assertTrue(count == 0 && permits == 100)
-        } @@ignore
+        }
     }
 }
 

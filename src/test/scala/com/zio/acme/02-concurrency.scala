@@ -238,7 +238,7 @@ object HubBasics extends ZIOSpecDefault {
           _ <- ZIO.foreachPar(1 to 100) { _ =>
                 ZIO.scoped(hub.subscribe.flatMap { queue =>
                   latch.update(_ - 1).commit *>
-                    queue.take.flatMap(v => counter.update(_ + v)).repeatN(99)
+                    queue.take.flatMap(v => counter.update(_ + v)).repeatN(99).forkScoped
                 })
           }
           value <- counter.get
@@ -259,7 +259,7 @@ object HubBasics extends ZIOSpecDefault {
  * 2. Implement a CircuitBreaker, which triggers on too many failures, and
  *    which (gradually?) resets after a certain amount of time.
  */
-object Graduation03 extends ZIOSpecDefault {
+object Graduation02 extends ZIOSpecDefault {
   def spec =
     suite("Graduation")()
 }

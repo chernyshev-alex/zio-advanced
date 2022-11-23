@@ -18,11 +18,14 @@
  * scalable, interruptible, and free from deadlocks and race conditions.
  */
 package com.zio.acme
-import zio._
+import zio.ZIO.{ifZIO, yieldNow}
+import zio.{Ref, Schedule, _}
 import zio.stm.ZSTM.ifSTM
 import zio.stm._
-import zio.test._
+import zio.test.{assertTrue, _}
 import zio.test.TestAspect._
+
+import scala.language.postfixOps
 
 /**
  * ZIO queues are high-performance, asynchronous, lock-free structures backed
@@ -48,9 +51,9 @@ object QueueBasics extends ZIOSpecDefault {
         for {
           q <- Queue.bounded[Int](1)
           ref <- Ref.make(0)
-          _ <- q.offer(12).fork
-          f <- q.take.flatMap(e => ref.set(e)).fork
-          _ <- f.join
+          f1 <- q.offer(12).fork
+          f2 <- q.take.flatMap(e => ref.set(e)).fork
+          _ <- f1.await *> f2.await
           v <- ref.get
         } yield assertTrue(v == 12)
       }  +
@@ -64,8 +67,9 @@ object QueueBasics extends ZIOSpecDefault {
           for {
             counter <- Ref.make(0)
             queue   <- Queue.bounded[Int](100)
-            _       <- ZIO.foreach(1 to 100)(v => queue.offer(v)).forkDaemon
-            _       <- queue.take.flatMap(v => counter.update(_ + v)).repeatWhileZIO(_ => ! queue.isEmpty)
+            _       <- ZIO.foreach(1 to 100)(v => queue.offer(v)).fork
+            cons    <- queue.take.flatMap(v => counter.update(_ + v)).repeatWhileZIO(_ => ! queue.isEmpty).fork
+            _       <- cons.await
             value   <- counter.get
           } yield assertTrue(value == 5050)
         } +
@@ -96,16 +100,7 @@ object QueueBasics extends ZIOSpecDefault {
             counter <- Ref.make(0)
             queue   <- Queue.bounded[Int](100)
             _       <- ZIO.foreachPar(1 to 100)(v => queue.offer(v)).forkDaemon
-            fiber   <-  ZIO.uninterruptible {
-                          for {
-                            child  <- queue.take.flatMap(a => ZIO.interruptible(counter.update(_ + a)))
-                                        .repeatWhileZIO(_ => ! queue.isEmpty)
-                                        .fork
-
-                            _   <- child.join
-                          } yield child
-                        }
-
+            _       <- ZIO.foreachPar(1 to 100)(_ => queue.take.flatMap(v => counter.update(_ + v)))
             value   <- counter.get
           } yield assertTrue(value == 5050)
         }  +
@@ -125,7 +120,6 @@ object QueueBasics extends ZIOSpecDefault {
             _      <- queue.takeN(100)
             _      <- queue.shutdown    // added to pass the test
             isDone <- done.get.repeatWhile(_ == false).timeout(10.millis).some
-
           } yield assertTrue(isDone)
         }
     }
@@ -227,7 +221,6 @@ object StmBasics extends ZIOSpecDefault {
 object HubBasics extends ZIOSpecDefault {
   def spec =
     suite("HubBasics") {
-
       /**
        * EXERCISE
        *
@@ -241,16 +234,16 @@ object HubBasics extends ZIOSpecDefault {
           counter <- Ref.make[Int](0)
           hub     <- Hub.bounded[Int](100)
           latch   <- TRef.make(100).commit
-          scount  <- Ref.make[Int](0)
           _       <- (latch.get.retryUntil(_ <= 0).commit *> ZIO.foreach(1 to 100)(hub.publish(_))).forkDaemon
           _ <- ZIO.foreachPar(1 to 100) { _ =>
-            ZIO.scoped(hub.subscribe.flatMap { queue =>
-              latch.update(_ - 1).commit
-            })
+                ZIO.scoped(hub.subscribe.flatMap { queue =>
+                  latch.update(_ - 1).commit *>
+                    queue.take.flatMap(v => counter.update(_ + v)).repeatN(99)
+                })
           }
           value <- counter.get
         } yield assertTrue(value == 505000)
-      } @@ ignore
+      }
     }
 }
 

@@ -217,7 +217,6 @@ object SimpleOperators extends ZIOSpecDefault {
 object RunningStreams extends ZIOSpecDefault {
   def spec =
     suite("RunningStreams") {
-
       /**
        * EXERCISE
        *
@@ -225,11 +224,10 @@ object RunningStreams extends ZIOSpecDefault {
        */
       test("runHead") {
         val stream = ZStream("All work and no play makes Jack a dull boy").forever
-
         for {
-          headOption <- ZIO.succeed(Option.empty[String])
+          headOption <- stream.runHead
         } yield assertTrue(headOption == Some("All work and no play makes Jack a dull boy"))
-      } @@ ignore +
+      }  +
         /**
          * EXERCISE
          *
@@ -238,13 +236,12 @@ object RunningStreams extends ZIOSpecDefault {
          */
         test("runDrain") {
           val stream = ZStream.fromIterable(0 to 1000)
-
           for {
             drained   <- Ref.make(false)
-            _         <- (stream ++ ZStream.fromZIO(drained.set(true)).drain).runHead
+            _         <- (stream ++ ZStream.fromZIO(drained.set(true)).drain).runDrain  // runHead
             isDrained <- drained.get
           } yield assertTrue(isDrained)
-        } @@ ignore +
+        }  +
         /**
          * EXERCISE
          *
@@ -253,11 +250,10 @@ object RunningStreams extends ZIOSpecDefault {
          */
         test("runCount") {
           val stream = ZStream.fromIterable(0 to 100)
-
           for {
-            count <- stream.runHead.some
+            count <- stream.runCount
           } yield assertTrue(count == 101)
-        } @@ ignore +
+        }  +
         /**
          * EXERCISE
          *
@@ -266,12 +262,10 @@ object RunningStreams extends ZIOSpecDefault {
          */
         test("run") {
           val stream = ZStream.fromIterable(0 to 100)
-          val sink   = ZSink.count
-
           for {
-            count <- stream.runHead.some
+            count <- stream.run(ZSink.count)
           } yield assertTrue(count == 101)
-        } @@ ignore +
+        }  +
         /**
          * EXERCISE
          *
@@ -279,11 +273,10 @@ object RunningStreams extends ZIOSpecDefault {
          */
         test("fold") {
           val stream = ZStream.fromIterable(0 to 100)
-
           for {
-            sum <- stream.runHead.some
+            sum <- stream.runFold(0)((a, v) => a + v)
           } yield assertTrue(sum == 5050)
-        } @@ ignore +
+        }  +
         /**
          * EXERCISE
          *
@@ -291,28 +284,20 @@ object RunningStreams extends ZIOSpecDefault {
          * and aggregating them into a map.
          */
         test("foldZIO") {
-          val expected =
-            Map("What is your name?" -> "Sherlock Holmes", "What is your age?" -> "42")
-
+          val expected = Map("What is your name?" -> "Sherlock Holmes", "What is your age?" -> "42")
           val questions = ZStream.fromIterable(expected.keys)
-
           for {
             _ <- TestConsole.feedLines(expected.values.toVector: _*)
-            map <- questions.run(ZSink.foldLeft(Map.empty[String, String]) {
-              case (map, question) =>
-                val answer = question
-
-                map + (question -> answer)
-            })
+            map <- questions.runFoldZIO(Map.empty[String, String])((m, question) =>
+              Console.readLine(question).map(answer => m + (question -> answer)))
           } yield assertTrue(map == expected)
-        } @@ ignore
+        }
     }
 }
 
 object AdvancedConstructors extends ZIOSpecDefault {
   def spec =
     suite("AdvancedConstructors") {
-
       /**
        * EXERCISE
        *
@@ -320,12 +305,11 @@ object AdvancedConstructors extends ZIOSpecDefault {
        * "unfolding" a finite or infinite stream from an initial value.
        */
       test("unfold") {
-        val fibs: ZStream[Any, Nothing, Int] = ZStream()
-
+        val fibs: ZStream[Any, Nothing, Int] = ZStream.unfold((0, 1)) { case (a, b) => Some((a, (b, a + b))) }
         for {
           values <- fibs.take(5).runCollect
         } yield assertTrue(values == Chunk(0, 1, 1, 2, 3))
-      } @@ ignore +
+      }  +
         /**
          * EXERCISE
          *
@@ -333,13 +317,12 @@ object AdvancedConstructors extends ZIOSpecDefault {
          * constructed by repeatedly executing the `Console.readLine` effect.
          */
         test("repeatZIO") {
-          val stream = ZStream[String]()
-
+          val stream = ZStream.repeatZIO(Console.readLine)
           for {
             _      <- TestConsole.feedLines("Hello", "World")
             values <- stream.take(2).runCollect
           } yield assertTrue(values == Chunk("Hello", "World"))
-        } @@ ignore +
+        }  +
         /**
          * EXERCISE
          *
@@ -353,20 +336,18 @@ object AdvancedConstructors extends ZIOSpecDefault {
               _    <- ZIO.fail(None).when(line == "John")
             } yield line
 
-          val stream = ZStream[String]()
-
+          val stream = ZStream.repeatZIOOption(readUntilJohn)  // ZStream[String]()
           for {
             _      <- TestConsole.feedLines("Sherlock", "Holmes", "John", "Watson")
             values <- stream.runCollect
           } yield assertTrue(values == Chunk("Sherlock", "Holmes"))
-        } @@ ignore
+        }
     }
 }
 
 object AdvancedOperators extends ZIOSpecDefault {
   def spec =
     suite("AdvancedOperators") {
-
       /**
        * EXERCISE
        *
@@ -375,11 +356,10 @@ object AdvancedOperators extends ZIOSpecDefault {
        */
       test("flatMap") {
         val stream = ZStream(1, 2, 3)
-
         for {
-          values <- stream.runCollect
+          values <- stream.flatMap(e => ZStream(e,e,e)).runCollect
         } yield assertTrue(values == Chunk(1, 1, 1, 2, 2, 2, 3, 3, 3))
-      } @@ ignore +
+      } +
         /**
          * EXERCISE
          *
@@ -387,17 +367,15 @@ object AdvancedOperators extends ZIOSpecDefault {
          * and ask for a response using Console.readLine.
          */
         test("mapZIO") {
-          val questions =
-            ZStream("What is your name?", "What is your age?")
-
+          val questions = ZStream("What is your name?", "What is your age?")
           for {
             _      <- TestConsole.feedLines("Sherlock Holmes", "42")
-            values <- questions.runCollect
+            values <- questions.mapZIO(q => Console.printLine(q) *> Console.readLine).runCollect
             lines  <- TestConsole.output
           } yield
             assertTrue(values == Chunk("Sherlock Holmes", "42")) &&
               assertTrue(lines == Vector("What is your name?\n", "What is your age?\n"))
-        } @@ ignore +
+        } +
         /**
          * EXERCISE
          *
@@ -409,7 +387,9 @@ object AdvancedOperators extends ZIOSpecDefault {
           val stream = ZStream("blue", "red", "blue", "red")
 
           def aggregate(stream: Stream[Nothing, String]): Stream[Nothing, (String, Int)] =
-            ???
+            stream.mapAccum(Map.empty[String, Int])((m, w) => {
+               val t  = w -> (m.getOrElse(w, 0) + 1)
+               (m + t, t) })
 
           for {
             tuple <- aggregate(stream).runLast.some
@@ -421,7 +401,6 @@ object AdvancedOperators extends ZIOSpecDefault {
 object BasicError extends ZIOSpecDefault {
   def spec =
     suite("BasicError") {
-
       /**
        * EXERCISE
        *
@@ -430,9 +409,9 @@ object BasicError extends ZIOSpecDefault {
        */
       test("fail") {
         for {
-          value <- (ZStream(): Stream[String, Int]).runCollect.either
+          value <- (ZStream.fail("Uh oh!")).runCollect.either
         } yield assertTrue(value == Left("Uh oh!"))
-      } @@ ignore +
+      }  +
         /**
          * EXERCISE
          *
@@ -440,7 +419,7 @@ object BasicError extends ZIOSpecDefault {
          */
         test("catchAll") {
           for {
-            value <- (ZStream.fail("Uh oh!"): Stream[String, String]).runCollect
+            value <- ZStream.fail("Uh oh!").catchAll(err => ZStream(err)).runCollect
           } yield assertTrue(value == Chunk("Uh oh!"))
         }
     }
@@ -449,7 +428,6 @@ object BasicError extends ZIOSpecDefault {
 object TemporalStreams extends ZIOSpecDefault {
   def spec =
     suite("TemporalStreams") {
-
       /**
        * EXERCISE
        *
@@ -457,11 +435,10 @@ object TemporalStreams extends ZIOSpecDefault {
        */
       test("fromSchedule") {
         val schedule = Schedule.recurs(100)
-
         for {
-          values <- ZStream().runCollect
+          values <- ZStream.fromSchedule(schedule).runCollect
         } yield assertTrue(values.length == 100)
-      } @@ ignore +
+      }  +
         /**
          * EXERCISE
          *
@@ -470,22 +447,17 @@ object TemporalStreams extends ZIOSpecDefault {
          */
         test("repeatZIOWithSchedule") {
           val effect   = Console.printLine("All work and no play makes Jack a dull boy")
-          val schedule = Schedule.recurs(100)
-
-          val s = ZStream()
-
           for {
-            _     <- ZStream().runDrain
+            _     <- ZStream.repeatZIOWithSchedule(effect, Schedule.recurs(100)).runDrain
             lines <- TestConsole.output
           } yield assertTrue(lines.length == 101)
-        } @@ ignore
+        }
     }
 }
 
 object ChunkedStreams extends ZIOSpecDefault {
   def spec =
     suite("ChunkedStreams") {
-
       /**
        * EXERCISE
        *
@@ -494,13 +466,12 @@ object ChunkedStreams extends ZIOSpecDefault {
        */
       test("foreachChunk") {
         val stream = ZStream.fromIterable(1 to 100)
-
         for {
           chunkCount <- Ref.make(0)
-          chunks     <- stream.foreach(_ => chunkCount.update(_ + 1))
+          _     <- stream.runForeachChunk(_ => chunkCount.update(_ + 1))
           v          <- chunkCount.get
         } yield assertTrue(v == 1)
-      } @@ ignore +
+      } +
         /**
          * EXERCISE
          *
@@ -509,11 +480,10 @@ object ChunkedStreams extends ZIOSpecDefault {
          */
         test("mapChunks") {
           val stream = ZStream.fromChunks(Chunk(1), Chunk(2), Chunk(3, 4), Chunk(5, 6, 7, 8, 9))
-
           for {
-            values <- stream.runCollect
+            values <- stream.mapChunks(_.reverse).runCollect
           } yield assertTrue(values == Chunk(1, 2, 4, 3, 9, 8, 7, 6, 5))
-        } @@ ignore +
+        }  +
         /**
          * EXERCISE
          *
@@ -524,12 +494,12 @@ object ChunkedStreams extends ZIOSpecDefault {
           val stream = ZStream.fromChunks(Chunk(1), Chunk(2), Chunk(3, 4), Chunk(5, 6, 7, 8, 9))
 
           def chunked[R, E, A](stream: ZStream[R, E, A]): ZStream[R, E, Chunk[A]] =
-            stream.map(c => Chunk(c))
+            stream.mapChunks(c => Chunk(c))
 
           for {
             chunks <- chunked(stream).runCollect
           } yield assertTrue(chunks.length == 4)
-        } @@ ignore +
+        } +
         /**
          * EXERCISE
          *
@@ -539,14 +509,13 @@ object ChunkedStreams extends ZIOSpecDefault {
         test("unchunked") {
           val stream = ZStream(Chunk(1), Chunk(2), Chunk(3, 4), Chunk(5, 6, 7, 8, 9))
 
-          def unchunked[R, E, A](stream: ZStream[R, E, Chunk[A]]): ZStream[R, E, A] =
-            stream.map(_.head)
+          def unchunked[R, E, A](stream: ZStream[R, E, Chunk[A]]): ZStream[R, E, A] = stream.flattenChunks
 
           for {
             values1 <- unchunked(stream).runCollect
             values2 <- stream.flattenChunks.runCollect
           } yield assertTrue(values1 == values2)
-        } @@ ignore
+        }
     }
 }
 

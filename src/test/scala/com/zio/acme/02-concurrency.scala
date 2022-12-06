@@ -18,6 +18,7 @@
  * scalable, interruptible, and free from deadlocks and race conditions.
  */
 package com.zio.acme
+import com.zio.acme.Graduation02.Server
 import zio.ZIO.{ifZIO, yieldNow}
 import zio.{Ref, Schedule, _}
 import zio.stm.ZSTM.ifSTM
@@ -259,7 +260,59 @@ object HubBasics extends ZIOSpecDefault {
  * 2. Implement a CircuitBreaker, which triggers on too many failures, and
  *    which (gradually?) resets after a certain amount of time.
  */
+
 object Graduation02 extends ZIOSpecDefault {
+  trait BulkHead[+E] {
+    def apply[R, E1 >: E, A](zio: ZIO[R, E1, A]): ZIO[R, E1, A]
+  }
+
+  case object BulkHead {
+    final case class ClosedErr(capacity: Int) extends Exception(s"The bulkhead is closed at capacity ${capacity}")
+    final case class BulkHeadImpl[E](closedError: E, current : TRef[Int], maxConcurrent : Int) extends BulkHead[E] {
+      def apply[R, E1 >: E, A](zio: ZIO[R, E1, A]): ZIO[R, E1, A] = {
+        ZIO.uninterruptibleMask { restore =>
+          (for {
+            n <- current.get
+            e <- if (n > maxConcurrent) STM.succeed(ZIO.fail(closedError))
+            else current.update(_ + 1) *> STM.succeed(restore(zio).ensuring(current.update(_ - 1).commit))
+          } yield e).commit.flatten
+        }
+      }
+    }
+
+    def make[E](closedError: E, maxConcurrent: Int): UIO[BulkHead[E]] =
+      for {
+        ref <- TRef.make(0).commit
+    } yield BulkHeadImpl(closedError, ref, maxConcurrent)
+  }
+
+  trait Request
+  trait Response
+  class Server(bulk : BulkHead[BulkHead.ClosedErr]) {
+    def bulkHandleRequest(rq : Request) : Task[Response] = bulk(handleRequest(rq))
+    def handleRequest(rq : Request) : Task[Response] = ZIO.succeed(new Response{})
+  }
+
   def spec =
-    suite("Graduation")()
+    suite("Graduation")(
+      test("Should throw out ClosedErr when > capacity") {
+        val capacity = 2
+        for {
+          bulk <- BulkHead.make[BulkHead.ClosedErr](BulkHead.ClosedErr(capacity), capacity)
+          srv <- ZIO.attempt(new Server(bulk))
+          _ <- ZIO.foreachParDiscard(0 to 100000)(_ => srv.bulkHandleRequest(new Request{}))
+        } yield assertTrue(true)
+      } @@ TestAspect.failing[Any] {
+        case TestFailure.Runtime(_: Cause[BulkHead.ClosedErr], _) => true
+        case _ => false
+      } +
+        test("when < capacity") {
+          val capacity = 10
+          for {
+            bulk <- BulkHead.make[BulkHead.ClosedErr](BulkHead.ClosedErr(capacity), capacity)
+            srv <- ZIO.attempt(new Server(bulk))
+            _ <- ZIO.foreachParDiscard(0 to 10000)(_ => srv.bulkHandleRequest(new Request{}))
+          } yield assertTrue(true)
+        }
+    )
 }

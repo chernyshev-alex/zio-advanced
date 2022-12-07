@@ -295,7 +295,7 @@ object Graduation02 extends ZIOSpecDefault {
 
   def spec =
     suite("Graduation")(
-      test("Should throw out ClosedErr when > capacity") {
+      test("when > capacity should throw out ClosedErr") {
         val capacity = 2
         for {
           bulk <- BulkHead.make[BulkHead.ClosedErr](BulkHead.ClosedErr(capacity), capacity)
@@ -306,11 +306,11 @@ object Graduation02 extends ZIOSpecDefault {
         case TestFailure.Runtime(_: Cause[BulkHead.ClosedErr], _) => true
         case _ => false
       } +
-        test("when < capacity") {
+        test("when < capacity no ClosedErr") {
           val capacity = 10
           for {
             bulk <- BulkHead.make[BulkHead.ClosedErr](BulkHead.ClosedErr(capacity), capacity)
-            srv <- ZIO.attempt(new Server(bulk))
+            srv <- ZIO.succeed(new Server(bulk))
             _ <- ZIO.foreachParDiscard(0 to 10000)(_ => srv.bulkHandleRequest(new Request{}))
           } yield assertTrue(true)
         }

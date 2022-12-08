@@ -18,6 +18,7 @@ import zio.test.TestAspect._
 
 import java.io.{FileReader, IOException}
 import java.nio.file.{FileSystems, Path, Paths}
+import scala.language.postfixOps
 
 /**
  * ZIO Streams can be constructed from a huge number of other data types,
@@ -526,15 +527,16 @@ object ChunkedStreams extends ZIOSpecDefault {
  * that uses ZIO Streams to perform "word counting" on a provided file.
  */
 object Graduation03 extends zio.ZIOAppDefault {
-  def wordCount(file: String): IO[IOException, Map[String, Int]] = ???
 
-  def run =
-    getArgs.map(_.headOption).flatMap {
-      case None => Console.printLine("You need to specify a file to word count").!.as(ExitCode.failure)
-      case Some(file) =>
-        (for {
-          map <- wordCount(file)
-          _   <- Console.printLine(map.mkString("", "\n", ""))
-        } yield ()).exitCode
-    }
+  def splitFilePipeline = ZPipeline.utf8Decode >>> ZPipeline.splitOn(" ")
+
+  def run = {
+    for {
+      file <- getArgs.map(_.headOption).someOrFail("Specify a file")
+      map <- (ZStream.fromFileName(file) >>> splitFilePipeline).runFold(Map.empty[String, Int]) {
+                      case (m, word) => m + (word -> (m.getOrElse(word, 0) + 1))
+                  }.refineToOrDie[IOException]
+      _   <- Console.printLine(map.mkString("", "\n", ""))
+    } yield()
+  }
 }

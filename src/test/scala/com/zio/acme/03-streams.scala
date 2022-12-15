@@ -14,7 +14,6 @@ package com.zio.acme
 import zio._
 import zio.stream._
 import zio.test._
-import zio.test.TestAspect._
 
 import java.io.{FileReader, IOException}
 import java.nio.file.{FileSystems, Path, Paths}

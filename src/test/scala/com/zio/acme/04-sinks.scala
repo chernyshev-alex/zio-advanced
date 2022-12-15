@@ -13,9 +13,10 @@ package com.zio.acme
 
 import zio._
 import zio.stream._
-
-import zio.test._
+import zio.test.{assert, _}
 import zio.test.TestAspect._
+
+import java.io.IOException
 
 object Constructors extends ZIOSpecDefault {
   def spec =
@@ -147,9 +148,36 @@ object Operators extends ZIOSpecDefault {
  * GRADUATION
  *
  * To graduate from this section, you will implement a sink that writes results
- * to a persistet queue.
+ * to a persistent queue.
  */
 object Graduation04 extends ZIOSpecDefault {
+  trait PersistentQueue[-A] {
+    def append(a: A): Task[Unit]
+    def shutdown: Task[Unit]
+  }
+
+  trait PersistentQueueFactory {
+    def create[A](topic: String): Task[PersistentQueue[A]]
+  }
+
+  def persistentQueue[A](topic: String): ZSink[PersistentQueueFactory, Throwable, A, Nothing, Unit] =
+    for {
+      qf <- ZSink.service[PersistentQueueFactory]
+      q <- ZSink.fromZIO(qf.create(topic))
+      _ <- ZSink.foreach(q.append(_)).channel.ensuring(q.shutdown.orDie).toSink[A, Nothing]
+    } yield ()
+
+  def spec =
+    suite("Graduation") {
+      test("persistentQueue") {
+
+
+         assertTrue(1 == 1)
+        }
+      }
+    }
+
+object GraduationTest extends ZIOSpecDefault {
   trait PersistentQueue[-A] {
     def append(a: A): Task[Unit]
 
@@ -161,12 +189,18 @@ object Graduation04 extends ZIOSpecDefault {
   }
 
   def persistentQueue[A](topic: String): ZSink[PersistentQueueFactory, Throwable, A, Nothing, Unit] =
-    ???
+    for {
+      qf <- ZSink.service[PersistentQueueFactory]
+      q <- ZSink.fromZIO(qf.create(topic))
+      _ <- ZSink.foreach(q.append(_)).channel.ensuring(q.shutdown.orDie).toSink[A, Nothing]
+    } yield ()
 
-  def spec =
+  def spec = {
     suite("Graduation") {
       test("persistentQueue") {
+        ZStream[Int](1, 2, 3).run(persistentQueue("t1"))
         assertTrue(false)
-      } @@ ignore
+      }
     }
+  }
 }

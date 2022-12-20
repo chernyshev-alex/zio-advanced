@@ -14,9 +14,6 @@ package com.zio.acme
 import zio._
 import zio.stream._
 import zio.test.{assert, _}
-import zio.test.TestAspect._
-
-import java.io.IOException
 
 object Constructors extends ZIOSpecDefault {
   def spec =

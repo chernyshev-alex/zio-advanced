@@ -69,6 +69,7 @@ object ZServices extends ZIOSpecDefault {
 }
 
 object ZActor extends ZIOSpecDefault {
+  // acts like Akka actor
   def actor[In](receive: In => UIO[Unit]) : ZIO[Scope, Nothing, In => UIO[Boolean]] = {
     ZIO.acquireRelease {
       for {
@@ -78,17 +79,18 @@ object ZActor extends ZIOSpecDefault {
     } (_._2.join).map(_._1)
   }
 
-  def spec = suite("Pipeline") {
+  def spec = suite("Actor") {
     test("Send/Receive") {
       val app = ZIO.scoped {
         for {
-          sendTo <- actor[Int](n => ZIO.debug(s"received $n").delay(1.milliseconds))
-          _ <- ZIO.foreachParDiscard(1 to 100)(n => sendTo.apply(n))
+          receive <- ZIO.succeed((n : Int) => ZIO.debug(s"received $n").delay(1.milliseconds))
+          sendTo <- actor[Int](receive)
+          _ <- ZIO.foreachParDiscard(1 to 100)(sendTo(_))
           _ <- ZIO.debug("All messages were sent")
         } yield ()
       }
-      val exit = runtime.unsafe.run(app).getOrThrow()
-      assertTrue(exit == 10)
+      runtime.unsafe.run(app).getOrThrow()
+      assertTrue(false)
     }
   }
 }

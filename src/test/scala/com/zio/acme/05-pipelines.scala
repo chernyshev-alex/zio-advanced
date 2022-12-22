@@ -8,7 +8,6 @@ package com.zio.acme
 
 import zio._
 import zio.stream._
-import zio.test.TestAspect._
 import zio.test._
 
 import java.nio.charset.StandardCharsets
@@ -143,7 +142,7 @@ object Operators05 extends ZIOSpecDefault {
  */
 object Graduation05 extends ZIOSpecDefault {
   def rechunkWith[A](f: (Chunk[A], Chunk[A]) => (Chunk[A], Chunk[A])): ZPipeline[Any, Nothing, A, A] =
-    ???
+    ZPipeline.rechunk(2)
 
   def rechunk[A](n: Int): ZPipeline[Any, Nothing, A, A] =
     rechunkWith {
@@ -155,10 +154,9 @@ object Graduation05 extends ZIOSpecDefault {
     suite("Graduation") {
       test("rechunking") {
         val stream = ZStream.fromChunks(Chunk(1), Chunk(2, 3, 4), Chunk(5), Chunk(6, 7, 8))
-
         for {
           values <- (stream >>> rechunk[Int](2)).mapChunks(c => Chunk(c)).runCollect
-        } yield assertTrue(values == Chunk(Chunk(1, 2), Chunk(3, 4), Chunk(5, 6)))
-      } @@ ignore
+        } yield assertTrue(values == Chunk(Chunk(1, 2), Chunk(3, 4), Chunk(5, 6), Chunk(7, 8)))
+      }
     }
 }

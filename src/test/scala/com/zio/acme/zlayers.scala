@@ -2,8 +2,10 @@ package com.zio.acme
 
 import com.zio.acme.RuntimeSpec.unsafe
 import zio._
+import zio.stream.{ZPipeline, ZSink, ZStream}
 import zio.test.{ZIOSpecDefault, assertTrue}
 
+import java.io.IOException
 import scala.language.postfixOps
 
 object ZServices extends ZIOSpecDefault {
@@ -91,6 +93,27 @@ object ZActor extends ZIOSpecDefault {
       }
       runtime.unsafe.run(app).getOrThrow()
       assertTrue(false)
+    }
+  }
+}
+
+object ZPipelineApp extends ZIOSpecDefault {
+
+  def callService1(e : Int) = e.toString
+  def callService2(s : String) = s + "#"
+  def callService3(s : String) : String = throw new IOException("some exception")
+
+  def spec = suite("Pipeline") {
+    test("Simple Pipeline") {
+      val source = ZStream.fromIterable(1 to 2)
+      val p1 = ZPipeline.map((n : Int) => callService1(n))
+      val p2 = ZPipeline.map((s: String) => callService2(s))
+      val p3 = ZPipeline.map((s: String) => callService3(s))
+
+      val app = source >>> p1 >>> p2 >>> p3 run ZSink.collectAll
+
+      val result = runtime.unsafe.run(app).getOrThrow()
+      assertTrue(result == Chunk("1#", "2#"))
     }
   }
 }

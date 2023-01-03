@@ -1,8 +1,9 @@
 package com.zio.acme.domain
 
 import java.time.LocalDate
+import java.util.UUID
 
-final case class Order(id: Int, customerId: Int, refNumber : String, orderDate: LocalDate)
+final case class Order(id: UUID, customerId: UUID, orderDate: LocalDate)
 
 final case class OrderLineItem(pos : Int, article : String, desc : String,
                      qty : Int, price : BigDecimal, total :  BigDecimal,

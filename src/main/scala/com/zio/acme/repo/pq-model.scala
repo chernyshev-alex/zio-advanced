@@ -11,6 +11,6 @@ trait PqTablesDescription extends PostgresJdbcModule {
     implicit val schema = DeriveSchema.gen[Order]
     val orders = defineTableSmart[Order]
 
-    val (id, customerId, refNumber, orderDate) = orders.columns
+    val (id, customerId, orderDate) = orders.columns
 
 }

@@ -11,14 +11,14 @@ import java.time.LocalDate
 import java.util.UUID
 
 trait OrderRepository {
-  def findById(id : Int) : IO[RepositoryError, Order]
+  def findById(id : UUID) : IO[RepositoryError, Order]
   def findAll() : ZStream[Any, Exception, Order]
   def add(order : Order) : IO[RepositoryError, Int]
   def add(order : Seq[Order]) : IO[RepositoryError, Int]
 }
 
 object OrderRepository {
-  def findById(id : Int) : ZIO[OrderRepository, RepositoryError, Order] =
+  def findById(id : UUID) : ZIO[OrderRepository, RepositoryError, Order] =
     ZIO.serviceWithZIO[OrderRepository](_.findById(id))
 
   def findAll() : ZStream[OrderRepository, Exception, Order] =
@@ -35,8 +35,8 @@ final case class OrderRepositoryImpl(connectionPool : ConnectionPool)
 
   lazy val driverLayer = ZLayer.make[SqlDriver](SqlDriver.live, ZLayer.succeed(connectionPool))
 
-  override def findById(_id: Int): IO[RepositoryError, Order] = {
-    val qOrdersById = select(id, customerId, refNumber, orderDate)
+  override def findById(_id: UUID): IO[RepositoryError, Order] = {
+    val qOrdersById = select(id, customerId, orderDate)
       .from(orders)
       .where(id === _id)
     //          .to {
@@ -50,15 +50,13 @@ final case class OrderRepositoryImpl(connectionPool : ConnectionPool)
         case None => ZIO.unit
         case Some(e) => ZIO.logError(e.getMessage())
       }.mapError {
-        case None => RepositoryError(new RuntimeException(s"Order with id $id does not exists"))
+        case None => RepositoryError(new RuntimeException("Order does not exists"))
         case Some(e) => RepositoryError(e.getCause())
       }.provideLayer(driverLayer)
   }
 
-  // https://github.com/softwaremill/scala-sql-compare/blob/master/ziosql/src/main/scala/com/softwaremill/sql/ZioSqlTests.scala
-
   override def findAll(): ZStream[Any, Exception, Order] = {
-    val sql = select(id, customerId, refNumber, orderDate)
+    val sql = select(id, customerId, orderDate)
       .from(orders)
 
     execute[Order](sql.to((Order.apply _).tupled))
@@ -66,7 +64,7 @@ final case class OrderRepositoryImpl(connectionPool : ConnectionPool)
   }
 
   override def add(order: Order): IO[RepositoryError, Int] = {
-    val sql = insertInto(orders)(id, customerId, refNumber, orderDate).values(order)
+    val sql = insertInto(orders)(id, customerId, orderDate).values(order)
     
     ZIO.logInfo(s"Insert order query is ${renderInsert(sql)}") *> 
       execute[Order](sql)
@@ -76,8 +74,8 @@ final case class OrderRepositoryImpl(connectionPool : ConnectionPool)
   }
 
   override def add(seqOrders : Seq[Order]) : IO[RepositoryError, Int] = {
-    val xs = seqOrders.map(o => (o.id, o.customerId, o.refNumber, o.orderDate))
-    val sql = insertInto(orders)(id, customerId, refNumber, orderDate).values(xs)
+    val xs = seqOrders.map(o => (o.id, o.customerId, o.orderDate))
+    val sql = insertInto(orders)(id, customerId, orderDate).values(xs)
     execute(sql)
       .tapError(e => ZIO.logError(e.getMessage()))
       .mapError(RepositoryError(_))

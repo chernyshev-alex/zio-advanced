@@ -19,23 +19,28 @@ val testLayer = ZLayer.make[OrderRepository] (
 
   override def spec = 
     suite("order reporitory test") {
-      ZIO.logLevel(LogLevel.Warning)
+      
+      // ZIO.logLevel(LogLevel.Trace)
+
       test("find all") {
         for {
-          repo <- ZIO.service[OrderRepository]
-          cnt <- repo.findAll().runCount
+          cnt <- OrderRepository.findAll().runCount
         } yield assertTrue(cnt == 25)
       } +
-      test("find by id") {
+      test("find by id when exists") {
         val expected = Order(UUID.fromString("04912093-cc2e-46ac-b64c-1bd7bb7758c3"), 
               UUID.fromString("60b01fc9-c902-4468-8d49-3c0f989def37"),  LocalDate.of(2019, 3, 25))
-
         for {
-          repo <- ZIO.service[OrderRepository]
-          result <- repo.findById(expected.id)
+          result <- OrderRepository.findById(expected.id)
         } yield assertTrue(result == expected)
+      } +
+      test("find by id when not exists") {
+        for {
+         result <- OrderRepository.findById(UUID.fromString("00000000-c902-4468-8d49-3c0f989def37")).either
+        } yield assertTrue(result.isLeft)
       }
-    }
-    .provideLayerShared(testLayer.orDie) 
+   }.provideLayerShared(testLayer.orDie) 
   }
 
+// TODO  doobie impl
+// https://medium.com/@wiemzin/zio-with-http4s-and-doobie-952fba51d089

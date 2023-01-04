@@ -12,5 +12,5 @@ final case class OrderLineItem(pos : Int, article : String, desc : String,
 // TODO : move to repo ?
 sealed trait DomainError extends Throwable
 object DomainError {
-  final case class RepositoryError(ex: Throwable) extends DomainError
+  final case class RepositoryError(cause : Throwable) extends DomainError
 }

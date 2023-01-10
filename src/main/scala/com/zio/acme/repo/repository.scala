@@ -39,9 +39,6 @@ final case class OrderRepositoryImpl(connectionPool : ConnectionPool)
     val qOrdersById = select(id, customerId, orderDate)
       .from(orders)
       .where(id === _id)
-    //          .to {
-    //            case (id, customerId, refNumber, orderDate) => Order(id, customerId, refNumber, orderDate)
-    //          }
 
     val stream: ZStream[SqlDriver, Exception, Order] = execute[Order](qOrdersById.to((Order.apply _).tupled))
     stream.runHead.some

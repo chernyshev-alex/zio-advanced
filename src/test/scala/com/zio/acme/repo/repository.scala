@@ -7,6 +7,7 @@ import java.time.LocalDate
 import com.zio.acme.domain.Order
 import zio.sql._
 import java.util.UUID
+import com.zio.acme.domain.DomainError
 
 object OrderRepoSpec extends  ZIOSpecDefault {
 
@@ -18,11 +19,9 @@ val testLayer = ZLayer.make[OrderRepository] (
   )
 
   override def spec = 
-    suite("order reporitory test") {
+    suite("order repository test") {
       
-      // ZIO.logLevel(LogLevel.Trace)
-
-      test("find all") {
+      test(" all") {
         for {
           cnt <- OrderRepository.findAll().runCount
         } yield assertTrue(cnt == 25)
@@ -36,11 +35,20 @@ val testLayer = ZLayer.make[OrderRepository] (
       } +
       test("find by id when not exists") {
         for {
-         result <- OrderRepository.findById(UUID.fromString("00000000-c902-4468-8d49-3c0f989def37")).either
-        } yield assertTrue(result.isLeft)
+         result <- OrderRepository.findById(UUID.fromString("00000000-0000-0000-0000-000000000000")).either
+        } yield assertTrue(result.fold(_.isInstanceOf[DomainError.RepositoryError], _ => false))
+      } + 
+      test("add one order") {
+        val expected = Order(UUID.fromString("00000000-0000-0000-0000-000000000001"), 
+              UUID.fromString("00000000-0000-0000-0000-000000000001"),  LocalDate.of(2019, 3, 25))
+        for {
+          res <- OrderRepository.add(expected)
+        } yield assertTrue(res == 1)
       }
+
    }.provideLayerShared(testLayer.orDie) 
   }
 
 // TODO  doobie impl
 // https://medium.com/@wiemzin/zio-with-http4s-and-doobie-952fba51d089
+// https://medium.com/@wiemzin/zio-with-http4s-and-doobie-952fba51d
